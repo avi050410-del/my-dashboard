@@ -29,6 +29,7 @@ def get_data():
     rows = worksheet.get_all_values()
     df = pd.DataFrame(rows[1:], columns=rows[0])
     
+    # ניקוי נתונים
     for col in ["מסגרת שעות", "ניצול", "יתרה"]:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
     df['אחוז ניצול'] = pd.to_numeric(df['אחוז ניצול'].astype(str).str.replace('%', '').replace('#DIV/0!', '0'), errors='coerce').fillna(0).astype(int)
@@ -42,17 +43,21 @@ if st.sidebar.button("🔄 רענן נתונים"):
 
 df = get_data()
 
-# כותרת מעוצבת - הוסר הציון "מנהלת מרה"ס"
+# כותרת מעוצבת
 st.markdown(f"""
     <div style="{bg_style} padding: 50px; border-radius: 20px; text-align: center; color: white; border: 2px solid #FFFFFF;">
         <h1 style='margin: 0; text-shadow: 2px 2px 4px #000000;'>📊 דשבורד ניהול יועצים</h1>
     </div>
 """, unsafe_allow_html=True)
 
-# סינון
-selected_tkhum = st.sidebar.selectbox("🔍 בחר תחום:", ["הכל"] + list(df['תחום'].unique()))
+# סינון תחומים (ללא מנהלת מעבר)
+all_tkhumim = [t for t in df['תחום'].unique() if t != 'מנהלת מעבר']
+selected_tkhum = st.sidebar.selectbox("🔍 בחר תחום:", ["הכל"] + list(all_tkhumim))
+
 if selected_tkhum != "הכל": 
     df = df[df['תחום'] == selected_tkhum]
+else:
+    df = df[df['תחום'] != 'מנהלת מעבר']
 
 # גרף תכנון מול ביצוע בירוק
 st.subheader("📈 השוואת תכנון מול ביצוע")
@@ -62,7 +67,7 @@ st.bar_chart(df.groupby('תחום')[['מסגרת שעות', 'ניצול']].sum()
 today = datetime.datetime.now()
 df['המלצה'] = df.apply(lambda row: f"מומלץ לנצל {int(round(row['יתרה'] / max(0.1, (row['תאריך סיום הזמנה'] - today).days / 30)))} שעות/חודש" if pd.notna(row['תאריך סיום הזמנה']) and (row['תאריך סיום הזמנה'] - today).days > 0 else "ההזמנה הסתיימה", axis=1)
 
-# הכנה לתצוגה
+# הכנה לתצוגה ושינוי שמות עם אימוג'ים
 df_display = df[["תחום", "שם יועץ", "תאריך סיום הזמנה", "מסגרת שעות", "ניצול", "יתרה", "אחוז ניצול", "המלצה"]].copy()
 df_display['תאריך סיום הזמנה'] = df_display['תאריך סיום הזמנה'].dt.strftime('%m/%Y')
 df_display.columns = ["🏢 תחום", "👤 שם יועץ", "⏳ תאריך סיום", "📅 מסגרת שעות", "📊 ניצול", "💰 יתרה", "📈 אחוז ניצול", "💡 המלצה"]
