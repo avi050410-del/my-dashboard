@@ -47,22 +47,25 @@ selected_tkhum = st.sidebar.selectbox("🔍 בחר תחום:", ["הכל"] + list
 if selected_tkhum != "הכל": df = df[df['תחום'] == selected_tkhum]
 else: df = df[df['תחום'] != 'מנהלת מעבר']
 
+# כרטיסי סיכום (Metrics)
+st.markdown("---")
+col1, col2, col3 = st.columns(3)
+col1.metric("👤 סה\"כ יועצים", len(df))
+col2.metric("📅 מסגרת שעות כוללת", f"{df['מסגרת שעות'].sum():,}")
+col3.metric("📊 ניצול מצטבר", f"{df['ניצול'].sum():,}")
+st.markdown("---")
+
 # גרף
 st.subheader("📈 השוואת תכנון מול ביצוע")
 st.bar_chart(df.groupby('תחום')[['מסגרת שעות', 'ניצול']].sum(), color=["#006400", "#90EE90"])
 
-# לוגיקה משולבת: המלצה + סימן חריגה (⚠️)
+# לוגיקה משולבת
 today = datetime.datetime.now()
 def process_row(row):
     months_left = max(0.1, (row['תאריך סיום הזמנה'] - today).days / 30) if pd.notna(row['תאריך סיום הזמנה']) else 1
-    
-    # חישוב המלצה
     recommendation = f"מומלץ: {int(round(row['יתרה'] / months_left))} שעות/חודש" if (row['תאריך סיום הזמנה'] - today).days > 0 else "ההזמנה הסתיימה"
-    
-    # חישוב חריגה (35%)
     expected_balance = (row['מסגרת שעות'] / 12) * months_left
     alert = "⚠️" if row['יתרה'] < (expected_balance * 0.65) else ""
-    
     return recommendation, alert
 
 df[['המלצה', 'חריגה']] = df.apply(lambda row: pd.Series(process_row(row)), axis=1)
