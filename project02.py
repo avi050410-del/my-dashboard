@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import gspread
 import datetime
-import base64
 import json
 
 # הגדרת דף לרוחב מלא
@@ -10,7 +9,6 @@ st.set_page_config(layout="wide", page_title="דשבורד מנהלת מרה\"ס
 
 @st.cache_data(ttl=0)
 def get_data():
-    # חיבור מאובטח דרך ה-Secrets של Streamlit
     creds_dict = json.loads(st.secrets["gspread"]["credentials"])
     gc = gspread.service_account_from_dict(creds_dict)
     
@@ -19,7 +17,7 @@ def get_data():
     rows = worksheet.get_all_values()
     df = pd.DataFrame(rows[1:], columns=rows[0])
     
-    # ניקוי ועיבוד נתונים
+    # ניקוי נתונים
     for col in ["מסגרת שעות", "ניצול", "יתרה"]:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
     
@@ -30,29 +28,28 @@ def get_data():
 
 df = get_data()
 
-# עיצוב וכותרות
-st.markdown("<h1>📊 דשבורד ניהול יועצים - מנהלת מרה\"ס</h1>", unsafe_allow_html=True)
+# חישוב המלצה
+today = datetime.datetime.now()
+def calculate_recommendation(row):
+    if pd.isna(row['תאריך סיום הזמנה']): return "נתונים חסרים"
+    months_left = (row['תאריך סיום הזמנה'] - today).days / 30
+    if months_left <= 0: return "ההזמנה הסתיימה"
+    return f"מומלץ לנצל {int(round(row['יתרה'] / max(0.1, months_left)))} שעות בחודש"
 
-# סינון תחום
+df['המלצה'] = df.apply(calculate_recommendation, axis=1)
+
+# כותרת וסינון
+st.markdown("<h1>📊 דשבורד ניהול יועצים - מנהלת מרה\"ס</h1>", unsafe_allow_html=True)
 selected_tkhum = st.sidebar.selectbox("🔍 בחר תחום:", ["הכל"] + list(df['תחום'].unique()))
 if selected_tkhum != "הכל":
     df = df[df['תחום'] == selected_tkhum]
 
-# מטריקות
-col1, col2, col3 = st.columns(3)
-col1.metric("👤 סה\"כ יועצים", len(df))
-col2.metric("📉 ממוצע ניצול", f"{df['אחוז ניצול'].mean():.0f}%")
-col3.metric("💰 סה\"כ יתרה", f"{df['יתרה'].sum():,}")
+# בחירת העמודות לפי הסדר שביקשת + הוספת ההמלצה
+cols_to_show = ["תחום", "שם יועץ", "תאריך סיום הזמנה", "מסגרת שעות", "ניצול", "יתרה", "אחוז ניצול", "המלצה"]
+df_display = df[cols_to_show].copy()
 
-# תצוגת טבלה מעוצבת
-df_display = df.rename(columns={
-    "שם יועץ": "👤 שם יועץ",
-    "תחום": "🏢 תחום",
-    "מסגרת שעות": "📅 מסגרת שעות",
-    "ניצול": "📊 ניצול",
-    "יתרה": "💰 יתרה",
-    "אחוז ניצול": "📈 אחוז ניצול",
-    "תאריך סיום הזמנה": "⏳ תאריך סיום"
-})
+# שינוי שמות העמודות לעברית יפה
+df_display.columns = ["תחום", "שם יועץ", "תאריך סיום", "מסגרת שעות", "ניצול", "יתרה", "אחוז ניצול", "המלצה"]
 
+# הצגת הטבלה
 st.dataframe(df_display, use_container_width=True)
