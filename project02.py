@@ -3,10 +3,12 @@ import pandas as pd
 import gspread
 import datetime
 import base64
+import json
 
 # הגדרת דף לרוחב מלא
 st.set_page_config(layout="wide", page_title="דשבורד מנהלת מרה\"ס")
 
+# פונקציה לטעינת תמונה (וודא שהיא קיימת בתיקייה)
 def get_image_base64(path):
     try:
         with open(path, "rb") as image_file:
@@ -14,7 +16,6 @@ def get_image_base64(path):
     except:
         return None
 
-# וודא שהשם הזה תואם בדיוק לקובץ התמונה בתיקייה שלך
 img_b64 = get_image_base64("image_2fbe80.jpg")
 banner_style = f"background-image: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url('data:image/jpeg;base64,{img_b64}');" if img_b64 else "background-color: #2E86C1;"
 
@@ -48,20 +49,21 @@ if st.sidebar.button("🔄 רענן נתונים"):
 
 @st.cache_data(ttl=0)
 def get_data():
-    gc = gspread.service_account(filename='credentials.json')
+    # חיבור מאובטח דרך ה-Secrets של Streamlit
+    creds_dict = json.loads(st.secrets["gspread"]["credentials"])
+    gc = gspread.service_account_from_dict(creds_dict)
+    
     sh = gc.open_by_url('https://docs.google.com/spreadsheets/d/1G-YKpuL3bBzesW0iEORf-x0WxvyeAM4At5RePg_OTKA/edit')
     worksheet = sh.worksheet('גיליון1')
     rows = worksheet.get_all_values()
     df = pd.DataFrame(rows[1:], columns=rows[0])
     
-    # ניקוי עמודות מספרים
+    # ניקוי נתונים
     for col in ["מסגרת שעות", "ניצול", "יתרה"]:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
     
     df['אחוז ניצול'] = pd.to_numeric(df['אחוז ניצול'].astype(str).str.replace('%', '').replace('#DIV/0!', '0'), errors='coerce').fillna(0).astype(int)
-    
-    # המרת תאריך חזקה: אם זה טקסט שקשור לתאריך, נמיר אותו. אם לא - נשאיר כ-NaT לטיפול מאוחר
-    df['תאריך סיום הזמנה'] = pd.to_datetime(df['תאריך סיום הזמנה'], dayfirst=True, errors='coerce')
+    df['תאריך סיום הזמנה'] = pd.to_datetime(df['תאריך סיום הזמנה'].str.strip(), dayfirst=True, errors='coerce')
     
     return df[["שם יועץ", "תחום", "מסגרת שעות", "ניצול", "יתרה", "אחוז ניצול", "תאריך סיום הזמנה"]]
 
