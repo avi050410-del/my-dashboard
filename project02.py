@@ -5,6 +5,7 @@ import datetime
 import json
 import base64
 
+# הגדרת דף לרוחב מלא
 st.set_page_config(layout="wide", page_title="דשבורד יועצים")
 
 def get_image_base64(path):
@@ -13,7 +14,7 @@ def get_image_base64(path):
             return base64.b64encode(image_file.read()).decode()
     except: return None
 
-img_b64 = get_image_base64("image_2fbe80.jpg")
+img_b64 = get_image_base64("image_2fbe80.jpg") 
 bg_style = f"background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), url('data:image/jpeg;base64,{img_b64}'); background-size: cover; background-position: center;" if img_b64 else "background-color: #2E7D32;"
 
 @st.cache_data(ttl=0)
@@ -25,7 +26,6 @@ def get_data():
     rows = worksheet.get_all_values()
     df = pd.DataFrame(rows[1:], columns=rows[0])
     
-    # ניקוי נתונים
     for col in ["מסגרת שעות", "ניצול", "יתרה"]:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
     df['אחוז ניצול'] = pd.to_numeric(df['אחוז ניצול'].astype(str).str.replace('%', '').replace('#DIV/0!', '0'), errors='coerce').fillna(0).astype(int)
@@ -51,26 +51,28 @@ else: df = df[df['תחום'] != 'מנהלת מעבר']
 st.subheader("📈 השוואת תכנון מול ביצוע")
 st.bar_chart(df.groupby('תחום')[['מסגרת שעות', 'ניצול']].sum(), color=["#006400", "#90EE90"])
 
-# חישוב המלצה וחריגות
+# חישוב לוגיקה חדשה (חריגה אם היתרה נמוכה מדי ביחס לזמן שנותר)
 today = datetime.datetime.now()
-df['המלצה'] = df.apply(lambda row: f"מומלץ: {int(round(row['יתרה'] / max(0.1, (row['תאריך סיום הזמנה'] - today).days / 30)))} שעות/חודש" if pd.notna(row['תאריך סיום הזמנה']) and (row['תאריך סיום הזמנה'] - today).days > 0 else "ההזמנה הסתיימה", axis=1)
+
+def get_alert(row):
+    if pd.isna(row['תאריך סיום הזמנה']): return ""
+    months_left = max(0.1, (row['תאריך סיום הזמנה'] - today).days / 30)
+    # יתרה ממוצעת נדרשת לפי הקצב המקורי
+    target_monthly = row['מסגרת שעות'] / 12 # נניח 12 חודשים במקור
+    expected_balance = target_monthly * months_left
+    
+    # חריגה אם היתרה בפועל נמוכה ב-35% מהצפוי ביחס לזמן
+    if row['יתרה'] < (expected_balance * 0.65):
+        return "⚠️"
+    return ""
+
+df['חריגה'] = df.apply(get_alert, axis=1)
+
+# הצגת העמודות המבוקשות בלבד
+cols_to_show = ["תחום", "שם יועץ", "תאריך סיום הזמנה", "מסגרת שעות", "ניצול", "יתרה", "אחוז ניצול", "חריגה"]
+df_display = df[cols_to_show].copy()
+df_display['תאריך סיום הזמנה'] = df_display['תאריך סיום הזמנה'].dt.strftime('%m/%Y')
+df_display.columns = ["🏢 תחום", "👤 שם יועץ", "⏳ תאריך סיום", "📅 מסגרת שעות", "📊 ניצול", "💰 יתרה", "📈 אחוז ניצול", "⚠️"]
 
 st.subheader("📋 פירוט יועצים")
-st.dataframe(df.rename(columns={"תחום": "🏢 תחום", "שם יועץ": "👤 שם יועץ"}), use_container_width=True)
-
-# אזור החריגות
-st.markdown("---")
-st.subheader("⚠️ התראות חריגה בניצול")
-
-# בדיקת חריגה (אם הניצול בפועל חורג ב-30% מהממוצע)
-# כאן אנחנו בודקים אם הניצול הנוכחי גבוה מ-1.3 * ממוצע חודשי
-df['ממוצע_חודשי'] = df['מסגרת שעות'] / 12 # נניח ממוצע שנתי
-df['חריג'] = df['ניצול'] > (df['ממוצע_חודשי'] * 1.3)
-
-chorigim = df[df['חריג'] == True]
-
-if not chorigim.empty:
-    for index, row in chorigim.iterrows():
-        st.warning(f"🚨 **{row['שם יועץ']}**: חריגה משמעותית בניצול! (ניצול בפועל גבוה ב-30% מהצפוי).")
-else:
-    st.success("✅ אין יועצים בחריגת ניצול מעל הרף המוגדר.")
+st.dataframe(df_display, use_container_width=True)
