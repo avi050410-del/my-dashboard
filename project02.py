@@ -51,28 +51,26 @@ else: df = df[df['תחום'] != 'מנהלת מעבר']
 st.subheader("📈 השוואת תכנון מול ביצוע")
 st.bar_chart(df.groupby('תחום')[['מסגרת שעות', 'ניצול']].sum(), color=["#006400", "#90EE90"])
 
-# חישוב לוגיקה חדשה (חריגה אם היתרה נמוכה מדי ביחס לזמן שנותר)
+# לוגיקה משולבת: המלצה + סימן חריגה (⚠️)
 today = datetime.datetime.now()
-
-def get_alert(row):
-    if pd.isna(row['תאריך סיום הזמנה']): return ""
-    months_left = max(0.1, (row['תאריך סיום הזמנה'] - today).days / 30)
-    # יתרה ממוצעת נדרשת לפי הקצב המקורי
-    target_monthly = row['מסגרת שעות'] / 12 # נניח 12 חודשים במקור
-    expected_balance = target_monthly * months_left
+def process_row(row):
+    months_left = max(0.1, (row['תאריך סיום הזמנה'] - today).days / 30) if pd.notna(row['תאריך סיום הזמנה']) else 1
     
-    # חריגה אם היתרה בפועל נמוכה ב-35% מהצפוי ביחס לזמן
-    if row['יתרה'] < (expected_balance * 0.65):
-        return "⚠️"
-    return ""
+    # חישוב המלצה
+    recommendation = f"מומלץ: {int(round(row['יתרה'] / months_left))} שעות/חודש" if (row['תאריך סיום הזמנה'] - today).days > 0 else "ההזמנה הסתיימה"
+    
+    # חישוב חריגה (35%)
+    expected_balance = (row['מסגרת שעות'] / 12) * months_left
+    alert = "⚠️" if row['יתרה'] < (expected_balance * 0.65) else ""
+    
+    return recommendation, alert
 
-df['חריגה'] = df.apply(get_alert, axis=1)
+df[['המלצה', 'חריגה']] = df.apply(lambda row: pd.Series(process_row(row)), axis=1)
 
-# הצגת העמודות המבוקשות בלבד
-cols_to_show = ["תחום", "שם יועץ", "תאריך סיום הזמנה", "מסגרת שעות", "ניצול", "יתרה", "אחוז ניצול", "חריגה"]
-df_display = df[cols_to_show].copy()
+# הצגת הטבלה
+df_display = df[["תחום", "שם יועץ", "תאריך סיום הזמנה", "מסגרת שעות", "ניצול", "יתרה", "אחוז ניצול", "המלצה", "חריגה"]].copy()
 df_display['תאריך סיום הזמנה'] = df_display['תאריך סיום הזמנה'].dt.strftime('%m/%Y')
-df_display.columns = ["🏢 תחום", "👤 שם יועץ", "⏳ תאריך סיום", "📅 מסגרת שעות", "📊 ניצול", "💰 יתרה", "📈 אחוז ניצול", "⚠️"]
+df_display.columns = ["🏢 תחום", "👤 שם יועץ", "⏳ תאריך סיום", "📅 מסגרת שעות", "📊 ניצול", "💰 יתרה", "📈 אחוז ניצול", "💡 המלצה", "⚠️"]
 
 st.subheader("📋 פירוט יועצים")
 st.dataframe(df_display, use_container_width=True)
