@@ -36,28 +36,33 @@ if st.sidebar.button("🔄 רענן נתונים"):
     st.cache_data.clear()
     st.rerun()
 
-df = get_data()
+df_full = get_data() # כל הנתונים
 
 # כותרת
 st.markdown(f"""<div style="{bg_style} padding: 50px; border-radius: 20px; text-align: center; color: white;"><h1>📊 דשבורד ניהול יועצים</h1></div>""", unsafe_allow_html=True)
 
-# סינון
-all_tkhumim = [t for t in df['תחום'].unique() if t != 'מנהלת מעבר']
-selected_tkhum = st.sidebar.selectbox("🔍 בחר תחום:", ["הכל"] + list(all_tkhumim))
-if selected_tkhum != "הכל": df = df[df['תחום'] == selected_tkhum]
-else: df = df[df['תחום'] != 'מנהלת מעבר']
+# סינון: בתפריט בחרנו רק ממה שקיים, אבל אנחנו נסנן את ה-df לתצוגה בלבד
+all_tkhumim = [t for t in df_full['תחום'].unique()]
+selected_tkhum = st.sidebar.selectbox("🔍 בחר תחום:", ["הכל"] + sorted(all_tkhumim))
 
-# כרטיסי סיכום (Metrics)
+# חישוב ה-DF שיוצג (הטבלה והגרף)
+if selected_tkhum != "הכל": 
+    df_filtered = df_full[df_full['תחום'] == selected_tkhum]
+else:
+    # כאן הסרנו את התנאי שהיה קודם, אז הכל חוזר לחישוב המקורי
+    df_filtered = df_full
+
+# כרטיסי סיכום (מבוססים על כל הנתונים!)
 st.markdown("---")
 col1, col2, col3 = st.columns(3)
-col1.metric("👤 סה\"כ יועצים", len(df))
-col2.metric("📅 מסגרת שעות כוללת", f"{df['מסגרת שעות'].sum():,}")
-col3.metric("📊 ניצול מצטבר", f"{df['ניצול'].sum():,}")
+col1.metric("👤 סה\"כ יועצים", len(df_full)) # משתמשים ב-full כדי לקבל את המספר הנכון
+col2.metric("📅 מסגרת שעות כוללת", f"{df_full['מסגרת שעות'].sum():,}")
+col3.metric("📊 ניצול מצטבר", f"{df_full['ניצול'].sum():,}")
 st.markdown("---")
 
-# גרף
+# גרף (לפי הסינון)
 st.subheader("📈 השוואת תכנון מול ביצוע")
-st.bar_chart(df.groupby('תחום')[['מסגרת שעות', 'ניצול']].sum(), color=["#006400", "#90EE90"])
+st.bar_chart(df_filtered.groupby('תחום')[['מסגרת שעות', 'ניצול']].sum(), color=["#006400", "#90EE90"])
 
 # לוגיקה משולבת
 today = datetime.datetime.now()
@@ -68,10 +73,10 @@ def process_row(row):
     alert = "⚠️" if row['יתרה'] < (expected_balance * 0.65) else ""
     return recommendation, alert
 
-df[['המלצה', 'חריגה']] = df.apply(lambda row: pd.Series(process_row(row)), axis=1)
+df_filtered[['המלצה', 'חריגה']] = df_filtered.apply(lambda row: pd.Series(process_row(row)), axis=1)
 
 # הצגת הטבלה
-df_display = df[["תחום", "שם יועץ", "תאריך סיום הזמנה", "מסגרת שעות", "ניצול", "יתרה", "אחוז ניצול", "המלצה", "חריגה"]].copy()
+df_display = df_filtered[["תחום", "שם יועץ", "תאריך סיום הזמנה", "מסגרת שעות", "ניצול", "יתרה", "אחוז ניצול", "המלצה", "חריגה"]].copy()
 df_display['תאריך סיום הזמנה'] = df_display['תאריך סיום הזמנה'].dt.strftime('%m/%Y')
 df_display.columns = ["🏢 תחום", "👤 שם יועץ", "⏳ תאריך סיום", "📅 מסגרת שעות", "📊 ניצול", "💰 יתרה", "📈 אחוז ניצול", "💡 המלצה", "⚠️"]
 
