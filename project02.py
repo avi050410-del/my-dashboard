@@ -8,12 +8,14 @@ import base64
 # הגדרת דף לרוחב מלא
 st.set_page_config(layout="wide", page_title="דשבורד יועצים")
 
+# פונקציה לטעינת תמונה
 def get_image_base64(path):
     try:
         with open(path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode()
     except: return None
 
+# טעינת תמונת הרקע
 img_b64 = get_image_base64("image_2fbe80.jpg") 
 bg_style = f"background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), url('data:image/jpeg;base64,{img_b64}'); background-size: cover; background-position: center;" if img_b64 else "background-color: #2E7D32;"
 
@@ -25,7 +27,6 @@ def get_data():
     worksheet = sh.worksheet('גיליון1')
     rows = worksheet.get_all_values()
     df = pd.DataFrame(rows[1:], columns=rows[0])
-    
     for col in ["מסגרת שעות", "ניצול", "יתרה"]:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
     df['אחוז ניצול'] = pd.to_numeric(df['אחוז ניצול'].astype(str).str.replace('%', '').replace('#DIV/0!', '0'), errors='coerce').fillna(0).astype(int)
@@ -36,49 +37,58 @@ if st.sidebar.button("🔄 רענן נתונים"):
     st.cache_data.clear()
     st.rerun()
 
-df_full = get_data() # כל הנתונים
+df_full = get_data()
 
 # כותרת
 st.markdown(f"""<div style="{bg_style} padding: 50px; border-radius: 20px; text-align: center; color: white;"><h1>📊 דשבורד ניהול יועצים</h1></div>""", unsafe_allow_html=True)
 
-# סינון: בתפריט בחרנו רק ממה שקיים, אבל אנחנו נסנן את ה-df לתצוגה בלבד
-all_tkhumim = [t for t in df_full['תחום'].unique()]
-selected_tkhum = st.sidebar.selectbox("🔍 בחר תחום:", ["הכל"] + sorted(all_tkhumim))
+# סינון
+all_tkhumim = sorted(df_full['תחום'].unique())
+selected_tkhum = st.sidebar.selectbox("🔍 בחר תחום:", ["הכל"] + all_tkhumim)
+df_filtered = df_full[df_full['תחום'] == selected_tkhum] if selected_tkhum != "הכל" else df_full
 
-# חישוב ה-DF שיוצג (הטבלה והגרף)
-if selected_tkhum != "הכל": 
-    df_filtered = df_full[df_full['תחום'] == selected_tkhum]
-else:
-    # כאן הסרנו את התנאי שהיה קודם, אז הכל חוזר לחישוב המקורי
-    df_filtered = df_full
-
-# כרטיסי סיכום (מבוססים על כל הנתונים!)
+# כרטיסי סיכום
 st.markdown("---")
 col1, col2, col3 = st.columns(3)
-col1.metric("👤 סה\"כ יועצים", len(df_full)) # משתמשים ב-full כדי לקבל את המספר הנכון
+col1.metric("👤 סה\"כ יועצים", len(df_full))
 col2.metric("📅 מסגרת שעות כוללת", f"{df_full['מסגרת שעות'].sum():,}")
 col3.metric("📊 ניצול מצטבר", f"{df_full['ניצול'].sum():,}")
 st.markdown("---")
 
-# גרף (לפי הסינון)
+# גרף
 st.subheader("📈 השוואת תכנון מול ביצוע")
 st.bar_chart(df_filtered.groupby('תחום')[['מסגרת שעות', 'ניצול']].sum(), color=["#006400", "#90EE90"])
 
-# לוגיקה משולבת
+# לוגיקה
 today = datetime.datetime.now()
 def process_row(row):
-    months_left = max(0.1, (row['תאריך סיום הזמנה'] - today).days / 30) if pd.notna(row['תאריך סיום הזמנה']) else 1
-    recommendation = f"מומלץ: {int(round(row['יתרה'] / months_left))} שעות/חודש" if (row['תאריך סיום הזמנה'] - today).days > 0 else "ההזמנה הסתיימה"
+    end_date = row['תאריך סיום הזמנה']
+    delta = (end_date - today).days if pd.notna(end_date) else -1
+    months_left = max(0.1, delta / 30)
+    recommendation = f"מומלץ: {int(round(row['יתרה'] / months_left))} שעות/חודש" if delta > 0 else "ההזמנה הסתיימה"
     expected_balance = (row['מסגרת שעות'] / 12) * months_left
-    alert = "⚠️" if row['יתרה'] < (expected_balance * 0.65) else ""
+    alert = "⚠️" if delta > 0 and row['יתרה'] < (expected_balance * 0.65) else ""
     return recommendation, alert
 
 df_filtered[['המלצה', 'חריגה']] = df_filtered.apply(lambda row: pd.Series(process_row(row)), axis=1)
 
-# הצגת הטבלה
+# טבלה
+def highlight_rows(row):
+    color = '#FFE5B4' if row['⚠️'] == '⚠️' else '' 
+    return [f'background-color: {color}'] * len(row)
+
 df_display = df_filtered[["תחום", "שם יועץ", "תאריך סיום הזמנה", "מסגרת שעות", "ניצול", "יתרה", "אחוז ניצול", "המלצה", "חריגה"]].copy()
 df_display['תאריך סיום הזמנה'] = df_display['תאריך סיום הזמנה'].dt.strftime('%m/%Y')
 df_display.columns = ["🏢 תחום", "👤 שם יועץ", "⏳ תאריך סיום", "📅 מסגרת שעות", "📊 ניצול", "💰 יתרה", "📈 אחוז ניצול", "💡 המלצה", "⚠️"]
 
 st.subheader("📋 פירוט יועצים")
-st.dataframe(df_display, use_container_width=True)
+st.dataframe(df_display.style.apply(highlight_rows, axis=1), use_container_width=True)
+
+# אזור התראות דחופות
+st.markdown("---")
+st.subheader("⚠️ התראות דחופות")
+for _, row in df_filtered.iterrows():
+    today = datetime.datetime.now()
+    if pd.isna(row['תאריך סיום הזמנה']): st.warning(f"{row['שם יועץ']}: נתונים חסרים!")
+    elif row['תאריך סיום הזמנה'] < today: st.warning(f"{row['שם יועץ']}: ההזמנה הסתיימה!")
+    elif row['חריגה'] == '⚠️': st.warning(f"{row['שם יועץ']}: ניצול חריג (יתרה נמוכה ביחס לזמן)!")
